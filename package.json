@@ -1,0 +1,42 @@
+{
+  "name": "gmail-attention",
+  "version": "1.0.0",
+  "description": "Gmail @tention — Manifest V3 Chrome extension that asks whether to keep or remove @mentioned contacts from Gmail's To recipient list.",
+  "license": "MIT",
+  "author": "Etienne Noël",
+  "homepage": "https://github.com/etiennenoel/gmail-attention#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/etiennenoel/gmail-attention.git"
+  },
+  "bugs": {
+    "url": "https://github.com/etiennenoel/gmail-attention/issues"
+  },
+  "keywords": [
+    "chrome-extension",
+    "manifest-v3",
+    "gmail",
+    "mentions",
+    "email",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "ts-node scripts/build-extension.script.ts",
+    "package": "ts-node scripts/package-extension.script.ts",
+    "assets": "ts-node scripts/generate-assets.script.ts",
+    "publish:cws": "ts-node scripts/publish-cws.script.ts",
+    "test": "jest --config jest.config.cjs --runInBand"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.11.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-package:
+    name: Typecheck, Test & Package Extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run strict TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Build unpacked Manifest V3 extension
+        run: |
+          npm run build
+          node --check dist/content.js
+
+      - name: Run unit and bundle integration tests
+        run: npm test
+
+      - name: Package Chrome Web Store ZIP
+        run: |
+          npm run package
+          python3 -m zipfile -t release/gmail-attention.zip
+
+      - name: Upload Chrome Web Store ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmail-attention-cws-zip
+          path: |
+            release/gmail-attention.zip
+            release/gmail-attention-v*.zip
+          if-no-files-found: error
+          retention-days: 30

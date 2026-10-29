@@ -1,0 +1,24 @@
+# Dependencies
+node_modules
+node_modules/
+
+# Build & Release Outputs
+dist/
+release/
+coverage/
+*.zip
+*.crx
+
+# Secrets & Local Unpacked Extension Keys
+.env
+.env.*
+.dev-key*
+*.pem
+*.key
+
+# OS & Editor Metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

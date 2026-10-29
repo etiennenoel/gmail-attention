@@ -1,0 +1,165 @@
+name: Release & Publish to Chrome Web Store
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      publish_mode:
+        description: 'Chrome Web Store publish mode'
+        required: true
+        default: 'DEFAULT_PUBLISH'
+        type: choice
+        options:
+          - DEFAULT_PUBLISH
+          - STAGED_PUBLISH
+          - UPLOAD_ONLY
+
+permissions:
+  contents: read
+
+jobs:
+  package-and-release:
+    name: Build, Verify & Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify manifest.json and package.json version alignment
+        id: meta
+        env:
+          GIT_REF: ${{ github.ref }}
+        run: |
+          node - << 'EOF'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const manifest = JSON.parse(fs.readFileSync('src/manifest.json', 'utf8'));
+
+          if (pkg.version !== manifest.version) {
+            throw new Error(
+              `Version mismatch: package.json (${pkg.version}) !== src/manifest.json (${manifest.version})`
+            );
+          }
+
+          const ref = process.env.GIT_REF || '';
+          if (ref.startsWith('refs/tags/v')) {
+            const tagVersion = ref.slice('refs/tags/v'.length);
+            if (tagVersion !== manifest.version) {
+              throw new Error(
+                `Git tag version (${tagVersion}) does not match src/manifest.json (${manifest.version})`
+              );
+            }
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\n`);
+          EOF
+
+      - name: Run strict TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Build unpacked extension and run test suite
+        run: |
+          npm run build
+          node --check dist/content.js
+          npm test
+
+      - name: Package Chrome Web Store ZIP
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          npm run package
+          python3 -m zipfile -t "release/gmail-attention-v${VERSION}.zip"
+
+      - name: Upload packaged ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmail-attention-release-zip
+          path: |
+            release/gmail-attention.zip
+            release/gmail-attention-v*.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create or update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" \
+              "release/gmail-attention-v${VERSION}.zip" \
+              "release/gmail-attention.zip" \
+              --clobber
+          else
+            gh release create "${TAG_NAME}" \
+              "release/gmail-attention-v${VERSION}.zip" \
+              "release/gmail-attention.zip" \
+              --title "Gmail @tention v${VERSION}" \
+              --generate-notes
+          fi
+
+  publish-chrome-web-store:
+    name: Publish to Chrome Web Store (API v2)
+    needs: package-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download packaged Chrome Web Store ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: gmail-attention-release-zip
+          path: release
+
+      - name: Upload and submit to Chrome Web Store API v2
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_ACCESS_TOKEN: ${{ secrets.CWS_ACCESS_TOKEN }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISH_MODE: ${{ inputs.publish_mode || 'DEFAULT_PUBLISH' }}
+          CWS_ZIP_PATH: release/gmail-attention.zip
+        run: |
+          if [ -z "${CWS_PUBLISHER_ID}" ] && [ -z "${CWS_EXTENSION_ID}" ]; then
+            echo "::warning::CWS_PUBLISHER_ID and CWS_EXTENSION_ID secrets are not configured yet; skipping Chrome Web Store API v2 publish."
+            {
+              echo "### Chrome Web Store API v2 Secrets Not Configured Yet"
+              echo ""
+              echo "The store-ready ZIP archive was built, verified, and attached to the release."
+              echo "To enable automated Chrome Web Store publishing:"
+              echo "1. Upload \`release/gmail-attention.zip\` once in the Chrome Web Store Developer Dashboard to obtain your 32-character \`CWS_EXTENSION_ID\`."
+              echo "2. Add \`CWS_PUBLISHER_ID\`, \`CWS_EXTENSION_ID\`, \`CWS_CLIENT_ID\`, \`CWS_CLIENT_SECRET\`, and \`CWS_REFRESH_TOKEN\` in GitHub Repository Secrets (see \`store-assets/CHROME_WEB_STORE_LISTING.md\`)."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          npm run publish:cws
