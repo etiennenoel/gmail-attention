@@ -86,7 +86,10 @@ export function createDeterministicZipArchive(entries: readonly ZipEntryInputInt
 
     const fileNameBuf = Buffer.from(entry.relativePosixPath, 'utf8');
     const uncompressedBuf = entry.data;
-    const compressedBuf = zlib.deflateRawSync(uncompressedBuf, { level: 9 });
+    const deflatedBuf = zlib.deflateRawSync(uncompressedBuf, { level: 9 });
+    const useStore = deflatedBuf.length >= uncompressedBuf.length;
+    const compressionMethod = useStore ? 0 : 8;
+    const compressedBuf = useStore ? uncompressedBuf : deflatedBuf;
     const crc = computeCrc32(uncompressedBuf);
 
     // Local File Header (30 bytes + filename)
@@ -94,7 +97,7 @@ export function createDeterministicZipArchive(entries: readonly ZipEntryInputInt
     localHeader.writeUInt32LE(0x04034b50, 0); // Local file header signature
     localHeader.writeUInt16LE(20, 4); // Version needed to extract (2.0)
     localHeader.writeUInt16LE(0x0800, 6); // General purpose bit flag (UTF-8)
-    localHeader.writeUInt16LE(8, 8); // Compression method: DEFLATE
+    localHeader.writeUInt16LE(compressionMethod, 8); // Compression method: STORE (0) or DEFLATE (8)
     localHeader.writeUInt16LE(DETERMINISTIC_DOS_TIME, 10);
     localHeader.writeUInt16LE(DETERMINISTIC_DOS_DATE, 12);
     localHeader.writeUInt32LE(crc, 14);
@@ -112,7 +115,7 @@ export function createDeterministicZipArchive(entries: readonly ZipEntryInputInt
     centralHeader.writeUInt16LE(0x0314, 4); // Version made by: Unix (3) + PKZIP 2.0 (20)
     centralHeader.writeUInt16LE(20, 6); // Version needed to extract (2.0)
     centralHeader.writeUInt16LE(0x0800, 8); // General purpose bit flag (UTF-8)
-    centralHeader.writeUInt16LE(8, 10); // Compression method: DEFLATE
+    centralHeader.writeUInt16LE(compressionMethod, 10); // Compression method: STORE (0) or DEFLATE (8)
     centralHeader.writeUInt16LE(DETERMINISTIC_DOS_TIME, 12);
     centralHeader.writeUInt16LE(DETERMINISTIC_DOS_DATE, 14);
     centralHeader.writeUInt32LE(crc, 16);
@@ -218,6 +221,30 @@ function validateStoreReadyDist(distDir: string): ChromeManifestShape {
     const absIcon = assertPathWithinDirectory(path.join(distDir, relIconPath), distDir);
     if (!fs.existsSync(absIcon)) {
       throw new Error(`Missing icon referenced in manifest.json: ${relIconPath}`);
+    }
+    verifyPngDimensions(absIcon, Number(sizeKey));
+  }
+
+  if (manifest.action?.default_popup) {
+    const absPopup = assertPathWithinDirectory(
+      path.join(distDir, manifest.action.default_popup),
+      distDir
+    );
+    if (!fs.existsSync(absPopup)) {
+      throw new Error(
+        `Missing action.default_popup referenced in manifest.json: ${manifest.action.default_popup}`
+      );
+    }
+  }
+
+  for (const [sizeKey, relIconPath] of Object.entries(
+    manifest.action?.default_icon ?? {}
+  )) {
+    const absIcon = assertPathWithinDirectory(path.join(distDir, relIconPath), distDir);
+    if (!fs.existsSync(absIcon)) {
+      throw new Error(
+        `Missing action.default_icon referenced in manifest.json: ${relIconPath}`
+      );
     }
     verifyPngDimensions(absIcon, Number(sizeKey));
   }

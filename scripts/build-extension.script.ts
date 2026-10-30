@@ -16,7 +16,18 @@ export interface ChromeManifestShape {
   description: string;
   key?: string;
   icons?: Record<string, string>;
-  content_scripts?: Array<{ js?: string[]; matches?: string[] }>;
+  action?: {
+    default_title?: string;
+    default_popup?: string;
+    default_icon?: Record<string, string>;
+  };
+  host_permissions?: string[];
+  content_scripts?: Array<{
+    js?: string[];
+    matches?: string[];
+    all_frames?: boolean;
+    match_about_blank?: boolean;
+  }>;
 }
 
 export interface BuildExtensionOptionsInterface {
@@ -108,9 +119,10 @@ function toModuleId(absFilePath: string): string {
 }
 
 /**
- * Compiles all TypeScript modules under `src/` into a single zero-dependency IIFE content script bundle.
+ * Compiles all TypeScript modules under `src/` into a single zero-dependency IIFE bundle
+ * that executes `entryModuleId`.
  */
-export function bundleContentScript(): string {
+export function bundleEntryModule(entryModuleId: string): string {
   const sourceFiles = collectTypeScriptFiles(SRC_DIR);
   const moduleEntries: string[] = [];
 
@@ -173,9 +185,23 @@ export function bundleContentScript(): string {
     `    factory(requireModule, mod, mod.exports);\n` +
     `    return mod.exports;\n` +
     `  }\n` +
-    `  requireModule("content.entry");\n` +
+    `  requireModule(${JSON.stringify(entryModuleId)});\n` +
     `})();\n`
   );
+}
+
+/**
+ * Compiles all TypeScript modules under `src/` into a single zero-dependency IIFE content script bundle.
+ */
+export function bundleContentScript(): string {
+  return bundleEntryModule('content.entry');
+}
+
+/**
+ * Compiles all TypeScript modules under `src/` into a single zero-dependency IIFE popup script bundle.
+ */
+export function bundlePopupScript(): string {
+  return bundleEntryModule('popup.entry');
 }
 
 /**
@@ -264,13 +290,30 @@ export function buildExtension(options: BuildExtensionOptionsInterface = {}): st
   fs.rmSync(targetOutDir, { recursive: true, force: true });
   fs.mkdirSync(safeIconsOutDir, { recursive: true });
 
-  // 1. Bundle content.js
+  // 1. Bundle content.js and popup.js + copy popup.html
   const bundleCode = bundleContentScript();
   const contentOutPath = assertPathWithinDirectory(
     path.join(targetOutDir, 'content.js'),
     targetOutDir
   );
   fs.writeFileSync(contentOutPath, bundleCode, 'utf8');
+
+  const popupBundleCode = bundlePopupScript();
+  const popupJsOutPath = assertPathWithinDirectory(
+    path.join(targetOutDir, 'popup.js'),
+    targetOutDir
+  );
+  fs.writeFileSync(popupJsOutPath, popupBundleCode, 'utf8');
+
+  const popupHtmlSrcPath = assertPathWithinDirectory(
+    path.join(SRC_DIR, 'popup.html'),
+    SRC_DIR
+  );
+  const popupHtmlOutPath = assertPathWithinDirectory(
+    path.join(targetOutDir, 'popup.html'),
+    targetOutDir
+  );
+  fs.copyFileSync(popupHtmlSrcPath, popupHtmlOutPath);
 
   // 2. Copy and verify committed PNG icons from src/icons/
   for (const size of ICON_SIZES) {
@@ -325,6 +368,30 @@ export function buildExtension(options: BuildExtensionOptionsInterface = {}): st
     const absIcon = assertPathWithinDirectory(path.join(targetOutDir, relIconPath), targetOutDir);
     if (!fs.existsSync(absIcon)) {
       throw new Error(`Missing icon referenced in manifest.json: ${relIconPath}`);
+    }
+    verifyPngDimensions(absIcon, Number(sizeKey));
+  }
+
+  if (manifest.action?.default_popup) {
+    const absPopup = assertPathWithinDirectory(
+      path.join(targetOutDir, manifest.action.default_popup),
+      targetOutDir
+    );
+    if (!fs.existsSync(absPopup)) {
+      throw new Error(
+        `Missing action.default_popup referenced in manifest.json: ${manifest.action.default_popup}`
+      );
+    }
+  }
+
+  for (const [sizeKey, relIconPath] of Object.entries(
+    manifest.action?.default_icon ?? {}
+  )) {
+    const absIcon = assertPathWithinDirectory(path.join(targetOutDir, relIconPath), targetOutDir);
+    if (!fs.existsSync(absIcon)) {
+      throw new Error(
+        `Missing action.default_icon referenced in manifest.json: ${relIconPath}`
+      );
     }
     verifyPngDimensions(absIcon, Number(sizeKey));
   }

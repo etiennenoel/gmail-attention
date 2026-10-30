@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Gmail @tention",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Asks whether to keep or remove @mentioned people from Gmail's To recipient list before sending.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -9,7 +9,20 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
+  "action": {
+    "default_title": "Gmail @tention",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
   "permissions": [],
+  "host_permissions": [
+    "https://mail.google.com/*"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none';"
   },
@@ -18,7 +31,8 @@
       "matches": ["https://mail.google.com/*"],
       "js": ["content.js"],
       "run_at": "document_end",
-      "all_frames": true
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }

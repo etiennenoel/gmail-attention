@@ -1,7 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
+import {
+  bootstrapGmailAttention,
+  GmailAttentionStatusResponseInterface,
+  isVerifiedGmailWindow,
+} from '../src/content.entry';
 import { GmailMentionMonitor } from '../src/core/gmail-mention.monitor';
+import { computePopupViewState } from '../src/popup.entry';
 import {
   FakeDocument,
   FakeElement,
@@ -680,5 +686,144 @@ describe('GmailMentionMonitor', () => {
     } finally {
       restoreGmailGlobals();
     }
+  });
+
+  it('seeds compose bodies when Gmail sets g_editable="true" via attribute mutation and handles AltGr @ keystrokes', async () => {
+    monitor.start();
+
+    // Gmail first mounts the editor div without g_editable/contenteditable, containing a draft chip
+    const delayedEditor = doc.createElement('div');
+    delayedEditor.className = 'Am Al editable';
+    delayedEditor.setAttribute('aria-label', 'Message Body');
+    const draftChip = doc.createElement('a');
+    draftChip.className = 'gmail_plusreply';
+    draftChip.textContent = '@Pre-existing Draft';
+    draftChip.setAttribute('href', 'mailto:draft@example.com');
+    draftChip.setAttribute('email', 'draft@example.com');
+    draftChip.setAttribute('contenteditable', 'false');
+    delayedEditor.appendChild(draftChip);
+    doc.body.appendChild(delayedEditor);
+    doc.flushMutations();
+
+    // BaseEditorWidget.makeFieldEditable sets g_editable="true" and contenteditable="true" via attribute mutations
+    delayedEditor.setAttribute('g_editable', 'true');
+    delayedEditor.setAttribute('contenteditable', 'true');
+    doc.flushMutations();
+    await flushMacrotask();
+
+    // Draft chip was seeded on attribute mutation and must not trigger a false positive
+    expect(monitor.getUnconfirmedRecipients()).toHaveLength(0);
+    expect(monitor.getComposeBodyCount()).toBe(1);
+
+    // User types '@' via AltGr (ctrlKey: true, altKey: true) on an international keyboard
+    delayedEditor.dispatchEvent(
+      new FakeEvent('keydown', { key: '@', ctrlKey: true, altKey: true })
+    );
+    const closedChip = doc.createElement('a');
+    closedChip.className = 'gmail_plusreply';
+    closedChip.textContent = '@Intl User';
+    closedChip.setAttribute('href', 'mailto:intl@example.com');
+    closedChip.setAttribute('email', 'intl@example.com');
+    closedChip.setAttribute('contenteditable', 'false');
+    delayedEditor.appendChild(closedChip);
+    doc.flushMutations();
+    await flushMacrotask();
+
+    expect(monitor.getUnconfirmedRecipients()).toHaveLength(1);
+    expect(monitor.getUnconfirmedRecipients()[0]?.displayLabel).toBe('Intl User');
+  });
+
+  it('supports about:blank child frames, responds to GMAIL_ATTENTION_PING, and computes diagnostic popup states', () => {
+    const parentWin = {
+      location: { origin: 'https://mail.google.com', href: 'https://mail.google.com/mail/u/0/' },
+    } as unknown as Window;
+    const childBlankWin = {
+      location: { origin: 'null', href: 'about:blank' },
+      parent: parentWin,
+      top: parentWin,
+    } as unknown as Window;
+
+    expect(isVerifiedGmailWindow(parentWin)).toBe(true);
+    expect(isVerifiedGmailWindow(childBlankWin)).toBe(true);
+
+    // Register GMAIL_ATTENTION_PING listener in top frame
+    let registeredListener:
+      | ((
+          msg: unknown,
+          sender: unknown,
+          sendResponse: (res: GmailAttentionStatusResponseInterface) => void
+        ) => void)
+      | null = null;
+    (globalThis as Record<string, unknown>)['chrome'] = {
+      runtime: {
+        onMessage: {
+          addListener: (cb: typeof registeredListener) => {
+            registeredListener = cb;
+          },
+        },
+      },
+    };
+
+    try {
+      createComposeFixture(doc);
+      const topWin = {
+        location: { origin: 'https://mail.google.com' },
+      } as unknown as Window;
+      (topWin as unknown as { top: Window }).top = topWin;
+
+      const booted = bootstrapGmailAttention(topWin, doc as unknown as Document);
+      expect(booted).not.toBeNull();
+      expect(registeredListener).not.toBeNull();
+
+      let pingResult: GmailAttentionStatusResponseInterface | null = null;
+      registeredListener!(
+        { type: 'GMAIL_ATTENTION_PING' },
+        {},
+        (res) => {
+          pingResult = res;
+        }
+      );
+      expect(pingResult).toEqual({
+        active: true,
+        composeBodyCount: 1,
+        unconfirmedCount: 0,
+      });
+      booted?.stop();
+    } finally {
+      delete (globalThis as Record<string, unknown>)['chrome'];
+    }
+
+    // Verify popup diagnostic states
+    expect(
+      computePopupViewState({
+        pingResponse: { active: true, composeBodyCount: 2, unconfirmedCount: 0 },
+        tabUrl: 'https://mail.google.com/mail/u/0/#inbox',
+        hasGmailHostPermission: true,
+      }).pillText
+    ).toBe('Active');
+
+    expect(
+      computePopupViewState({
+        pingResponse: null,
+        tabUrl: 'https://mail.google.com/mail/u/0/#inbox',
+        hasGmailHostPermission: true,
+      }).pillText
+    ).toBe('Needs Reload');
+
+    expect(
+      computePopupViewState({
+        pingResponse: null,
+        tabUrl: undefined,
+        hasGmailHostPermission: false,
+      }).pillText
+    ).toBe('Site Access Off');
+
+    expect(
+      computePopupViewState({
+        pingResponse: null,
+        tabUrl: 'https://github.com/etiennenoel/gmail-attention',
+        hasGmailHostPermission: true,
+      }).pillText
+    ).toBe('Standby');
   });
 });
