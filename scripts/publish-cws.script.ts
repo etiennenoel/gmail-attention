@@ -358,9 +358,33 @@ export function resolvePublishConfigFromEnvAndArgs(
 
   const publisherId = env['CWS_PUBLISHER_ID']?.trim() ?? '';
   const extensionId = env['CWS_EXTENSION_ID']?.trim() ?? '';
-  if (!publisherId || !extensionId) {
+  const accessToken = env['CWS_ACCESS_TOKEN']?.trim() || undefined;
+  const clientId = env['CWS_CLIENT_ID']?.trim() || undefined;
+  const clientSecret = env['CWS_CLIENT_SECRET']?.trim() || undefined;
+  const refreshToken = env['CWS_REFRESH_TOKEN']?.trim() || undefined;
+
+  const missingVars: string[] = [];
+  if (!publisherId) {
+    missingVars.push('CWS_PUBLISHER_ID');
+  }
+  if (!extensionId) {
+    missingVars.push('CWS_EXTENSION_ID');
+  }
+  if (!accessToken) {
+    if (!clientId) {
+      missingVars.push('CWS_CLIENT_ID');
+    }
+    if (!clientSecret) {
+      missingVars.push('CWS_CLIENT_SECRET');
+    }
+    if (!refreshToken) {
+      missingVars.push('CWS_REFRESH_TOKEN');
+    }
+  }
+
+  if (missingVars.length > 0) {
     throw new Error(
-      'Missing required CWS_PUBLISHER_ID and/or CWS_EXTENSION_ID environment variables.'
+      `Missing required Chrome Web Store environment variable(s): ${missingVars.join(', ')} (provide CWS_PUBLISHER_ID, CWS_EXTENSION_ID, and either CWS_ACCESS_TOKEN or CWS_CLIENT_ID + CWS_CLIENT_SECRET + CWS_REFRESH_TOKEN).`
     );
   }
 
@@ -377,10 +401,10 @@ export function resolvePublishConfigFromEnvAndArgs(
     deployPercentage,
     skipReview,
     auth: {
-      accessToken: env['CWS_ACCESS_TOKEN'],
-      clientId: env['CWS_CLIENT_ID'],
-      clientSecret: env['CWS_CLIENT_SECRET'],
-      refreshToken: env['CWS_REFRESH_TOKEN'],
+      accessToken,
+      clientId,
+      clientSecret,
+      refreshToken,
     },
   };
 }

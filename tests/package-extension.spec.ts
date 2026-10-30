@@ -84,7 +84,7 @@ describe('packageExtension & createDeterministicZipArchive', () => {
       skipBuild: true,
     });
 
-    expect(result.version).toBe('1.0.0');
+    expect(result.version).toBe('1.0.1');
     expect(fs.existsSync(result.zipPath)).toBe(true);
     expect(fs.existsSync(result.versionedZipPath)).toBe(true);
     expect(result.entries).toEqual([
@@ -94,6 +94,8 @@ describe('packageExtension & createDeterministicZipArchive', () => {
       'icons/icon-32.png',
       'icons/icon-48.png',
       'manifest.json',
+      'popup.html',
+      'popup.js',
     ]);
 
     const zipBytes = fs.readFileSync(result.zipPath);
@@ -106,6 +108,17 @@ describe('packageExtension & createDeterministicZipArchive', () => {
     expect(packagedManifest['manifest_version']).toBe(3);
     expect(packagedManifest['name']).toBe('Gmail @tention');
     expect(packagedManifest['key']).toBeUndefined();
+    expect(packagedManifest['action']).toEqual({
+      default_title: 'Gmail @tention',
+      default_popup: 'popup.html',
+      default_icon: {
+        '16': 'icons/icon-16.png',
+        '32': 'icons/icon-32.png',
+        '48': 'icons/icon-48.png',
+        '128': 'icons/icon-128.png',
+      },
+    });
+    expect(packagedManifest['host_permissions']).toEqual(['https://mail.google.com/*']);
   });
 
   it('refuses to package a dist directory whose manifest.json contains a local developer "key"', () => {

@@ -2,7 +2,7 @@ import { MentionRecipientInterface } from '../models/mention-recipient.interface
 import { PiiMaskingHelper } from './pii-masking.helper';
 
 const EXPLICIT_COMPOSE_BODY_SELECTOR =
-  'div[g_editable="true"], div[aria-label="Message Body"], div[aria-label="Message body"], div.Am.Al.editable[contenteditable="true"]';
+  'div[g_editable="true"], body[g_editable="true"], div[aria-label="Message Body"], div[aria-label="Message body"], div.Am.Al.editable[contenteditable="true"]';
 
 const FALLBACK_TEXTBOX_SELECTOR = 'div[contenteditable="true"][role="textbox"]';
 
@@ -39,7 +39,11 @@ export class GmailDomHelper {
    * (excluding auxiliary inputs such as Gemini "Describe your message" or recipient fields).
    */
   public static isComposeBody(element: Element | null): element is HTMLElement {
-    if (!element || element.tagName.toUpperCase() !== 'DIV') {
+    if (!element) {
+      return false;
+    }
+    const tagName = element.tagName.toUpperCase();
+    if (tagName !== 'DIV' && !(tagName === 'BODY' && element.getAttribute('g_editable') === 'true')) {
       return false;
     }
 
@@ -47,8 +51,11 @@ export class GmailDomHelper {
       return false;
     }
 
+    const contentEditableAttr = element.getAttribute('contenteditable');
     const isEditable =
-      element.getAttribute('contenteditable') === 'true' ||
+      contentEditableAttr === 'true' ||
+      contentEditableAttr === '' ||
+      (element as HTMLElement).isContentEditable === true ||
       element.getAttribute('g_editable') === 'true';
     if (!isEditable) {
       return false;

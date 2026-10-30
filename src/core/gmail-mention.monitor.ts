@@ -107,7 +107,14 @@ export class GmailMentionMonitor {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['href', 'email', 'contenteditable', 'tabindex', 'class'],
+        attributeFilter: [
+          'href',
+          'email',
+          'contenteditable',
+          'g_editable',
+          'tabindex',
+          'class',
+        ],
       });
     }
 
@@ -151,6 +158,13 @@ export class GmailMentionMonitor {
   public getUnconfirmedRecipients(): MentionRecipientInterface[] {
     this.pruneDetachedUnconfirmedChips();
     return Array.from(this.unconfirmedByChip.values());
+  }
+
+  /**
+   * Returns the number of currently mounted Gmail compose bodies in the document.
+   */
+  public getComposeBodyCount(): number {
+    return GmailDomHelper.findComposeBodies(this.doc).length;
   }
 
   private seedExistingComposeBodies(root: ParentNode): void {
@@ -219,14 +233,16 @@ export class GmailMentionMonitor {
       }
     }
 
-    if (event.key === '@' && !event.ctrlKey && !event.metaKey) {
+    const hasNonAltGrModifier = (event.ctrlKey || event.metaKey) && !event.altKey;
+
+    if (event.key === '@' && !hasNonAltGrModifier) {
       const targetComposeBody = GmailDomHelper.findEnclosingComposeBody(
         event.target as Node | null
       );
       if (targetComposeBody) {
         this.recordAtSessionStart(targetComposeBody);
       }
-    } else if (event.key === '+' && !event.ctrlKey && !event.metaKey) {
+    } else if (event.key === '+' && !hasNonAltGrModifier) {
       // Typing '+' starts a plus-mention rather than an '@'-mention; clear any stale '@' session.
       const targetComposeBody = GmailDomHelper.findEnclosingComposeBody(
         event.target as Node | null
@@ -304,12 +320,7 @@ export class GmailMentionMonitor {
           const addedElement = addedNode as Element;
 
           // Seed any newly mounted compose editors first before inspecting chips.
-          if (
-            GmailDomHelper.isComposeBody(addedElement) ||
-            addedElement.querySelector?.('div[g_editable="true"], div[contenteditable="true"]')
-          ) {
-            this.seedExistingComposeBodies(addedElement);
-          }
+          this.seedExistingComposeBodies(addedElement);
 
           const enclosingBody = GmailDomHelper.findEnclosingComposeBody(addedElement);
           if (enclosingBody) {
@@ -333,6 +344,12 @@ export class GmailMentionMonitor {
           candidateChips.add(mutation.target);
         }
       } else if (mutation.type === 'attributes') {
+        if (
+          mutation.target.nodeType === 1 &&
+          GmailDomHelper.isComposeBody(mutation.target as Element)
+        ) {
+          this.seedExistingComposeBodies(mutation.target as ParentNode);
+        }
         if (GmailDomHelper.isMentionChip(mutation.target)) {
           candidateChips.add(mutation.target);
         }

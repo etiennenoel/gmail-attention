@@ -211,7 +211,7 @@ describe('publishToChromeWebStore (Chrome Web Store API v2)', () => {
     ).toBe('Bearer [REDACTED] {"refresh_token":"[REDACTED]"}');
   });
 
-  it('parses CLI flags and environment variables via resolvePublishConfigFromEnvAndArgs', () => {
+  it('parses CLI flags and environment variables via resolvePublishConfigFromEnvAndArgs and fails fast when tokens or IDs are missing', () => {
     const cfg = resolvePublishConfigFromEnvAndArgs(
       ['--upload-only', '--zip=/tmp/custom.zip'],
       {
@@ -223,5 +223,17 @@ describe('publishToChromeWebStore (Chrome Web Store API v2)', () => {
     expect(cfg.publishMode).toBe('UPLOAD_ONLY');
     expect(cfg.zipPath).toBe('/tmp/custom.zip');
     expect(cfg.publisherId).toBe('pub-999');
+
+    expect(() => resolvePublishConfigFromEnvAndArgs([], {})).toThrow(
+      /Missing required Chrome Web Store environment variable\(s\): CWS_PUBLISHER_ID, CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN/
+    );
+
+    expect(() =>
+      resolvePublishConfigFromEnvAndArgs([], {
+        CWS_PUBLISHER_ID: 'pub-999',
+        CWS_EXTENSION_ID: 'abcdefghijklmnopabcdefghijklmnop',
+        CWS_CLIENT_ID: 'cid',
+      })
+    ).toThrow(/CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN/);
   });
 });

@@ -121,6 +121,28 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Verify required Chrome Web Store secrets are configured
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_ACCESS_TOKEN: ${{ secrets.CWS_ACCESS_TOKEN }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          missing=()
+          [ -z "${CWS_PUBLISHER_ID}" ] && missing+=("CWS_PUBLISHER_ID")
+          [ -z "${CWS_EXTENSION_ID}" ] && missing+=("CWS_EXTENSION_ID")
+          if [ -z "${CWS_ACCESS_TOKEN}" ]; then
+            [ -z "${CWS_CLIENT_ID}" ] && missing+=("CWS_CLIENT_ID")
+            [ -z "${CWS_CLIENT_SECRET}" ] && missing+=("CWS_CLIENT_SECRET")
+            [ -z "${CWS_REFRESH_TOKEN}" ] && missing+=("CWS_REFRESH_TOKEN")
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required Chrome Web Store secret(s): ${missing[*]}"
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -148,18 +170,4 @@ jobs:
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_PUBLISH_MODE: ${{ inputs.publish_mode || 'DEFAULT_PUBLISH' }}
           CWS_ZIP_PATH: release/gmail-attention.zip
-        run: |
-          if [ -z "${CWS_PUBLISHER_ID}" ] && [ -z "${CWS_EXTENSION_ID}" ]; then
-            echo "::warning::CWS_PUBLISHER_ID and CWS_EXTENSION_ID secrets are not configured yet; skipping Chrome Web Store API v2 publish."
-            {
-              echo "### Chrome Web Store API v2 Secrets Not Configured Yet"
-              echo ""
-              echo "The store-ready ZIP archive was built, verified, and attached to the release."
-              echo "To enable automated Chrome Web Store publishing:"
-              echo "1. Upload \`release/gmail-attention.zip\` once in the Chrome Web Store Developer Dashboard to obtain your 32-character \`CWS_EXTENSION_ID\`."
-              echo "2. Add \`CWS_PUBLISHER_ID\`, \`CWS_EXTENSION_ID\`, \`CWS_CLIENT_ID\`, \`CWS_CLIENT_SECRET\`, and \`CWS_REFRESH_TOKEN\` in GitHub Repository Secrets (see \`store-assets/CHROME_WEB_STORE_LISTING.md\`)."
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
-          npm run publish:cws
+        run: npm run publish:cws
