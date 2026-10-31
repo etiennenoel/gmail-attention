@@ -424,6 +424,8 @@ async function main(): Promise<void> {
 if (require.main === module) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
+    const singleLine = message.replace(/\r?\n/g, ' ');
+    process.stdout.write(`::error title=Chrome Web Store Publish Failed::${singleLine}\n`);
     process.stderr.write(`Chrome Web Store publish failed: ${message}\n`);
     process.exitCode = 1;
   });
